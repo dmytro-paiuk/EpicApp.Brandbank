@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Brandbank Feed POC</title>
+    <link rel="icon" href="favicon.png"/>
+    <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<header>
+    <div class="wrap">
+        <h1>NielsenIQ Brandbank &mdash; JSON Syndication POC</h1>
+        <p class="sub">Connects to the image library, pulls sample payloads, and downloads the leased images for review.</p>
+    </div>
+</header>
+
+<main class="wrap">
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Feed</h2>
+            <span id="feedStatus" class="pill">loading&hellip;</span>
+        </div>
+        <div class="row">
+            <label for="feed">Configured feed</label>
+            <select id="feed"></select>
+            <span class="hint" id="feedKey"></span>
+        </div>
+        <p class="note">
+            API keys stay on the server. The browser only calls this app, never
+            <code>connectapi.brandbank.com</code> directly.
+        </p>
+    </section>
+
+    <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="getnext" role="tab">GetNext</button>
+        <button class="tab" data-tab="getlast" role="tab">GetLast</button>
+        <button class="tab" data-tab="resend" role="tab">Resend</button>
+        <button class="tab" data-tab="coverage" role="tab">Coverage</button>
+        <button class="tab" data-tab="samples" role="tab">Samples</button>
+        <button class="tab" data-tab="images" role="tab">Images</button>
+    </nav>
+
+    <section class="panel tabpanel" id="tab-getnext">
+        <h2>GetNext</h2>
+        <p class="note">
+            Returns the next queued batch. Keep calling until you get a <strong>204</strong> &mdash; the returned
+            count is approximate and is not a reliable signal that the queue is empty. If the payload comes back
+            truncated or the call times out, this page falls back to GetLast automatically.
+        </p>
+        <div class="row">
+            <label for="products">Products per call</label>
+            <input id="products" type="number" min="1" max="1000" value="1"/>
+            <span class="hint">1 to 1000. Batching requires the GetLast fallback, which is wired up here.</span>
+        </div>
+        <div class="actions">
+            <button id="btnGetNext" class="primary">Call GetNext</button>
+            <button id="btnDrain">Drain queue (until 204)</button>
+        </div>
+        <div id="getnextResult"></div>
+    </section>
+
+    <section class="panel tabpanel hidden" id="tab-getlast">
+        <h2>GetLast</h2>
+        <p class="note">Replays the batch the last GetNext produced. Use it when a payload arrived incomplete.</p>
+        <div class="actions">
+            <button id="btnGetLast" class="primary">Call GetLast</button>
+        </div>
+        <div id="getlastResult"></div>
+    </section>
+
+    <section class="panel tabpanel hidden" id="tab-resend">
+        <h2>Product resend</h2>
+        <p class="note">
+            Requeues products already sent that are still in scope. Max 20 per request, one request every
+            30 seconds. Both limits are enforced here before the call goes out.
+        </p>
+        <div class="row">
+            <label for="resendMode">Identify by</label>
+            <select id="resendMode">
+                <option value="pvid">pvid</option>
+                <option value="gtin">gtin</option>
+            </select>
+        </div>
+        <label class="block" for="resendValues">One value per line</label>
+        <textarea id="resendValues" rows="6" placeholder="10981100&#10;1098110"></textarea>
+        <div class="actions">
+            <button id="btnResend" class="primary">Request resend</button>
+        </div>
+        <div id="resendResult"></div>
+    </section>
+
+    <section class="panel tabpanel hidden" id="tab-coverage">
+        <h2>Coverage upload</h2>
+        <p class="note">
+            Coverage is the range list. Each upload <strong>replaces</strong> the previous one, so it must contain
+            every product every time. Max 105MB, and no more than twice a day.
+        </p>
+        <div class="actions">
+            <button id="btnCoverageSample">Load example payload</button>
+        </div>
+        <label class="block" for="coverageJson">Coverage JSON</label>
+        <textarea id="coverageJson" rows="14" spellcheck="false"></textarea>
+        <div class="actions">
+            <button id="btnCoverage" class="primary">Upload coverage</button>
+        </div>
+        <div id="coverageResult"></div>
+    </section>
+
+    <section class="panel tabpanel hidden" id="tab-samples">
+        <h2>Saved payloads</h2>
+        <p class="note">Every payload is written to disk before anything else touches it. This is not an on-demand service.</p>
+        <div class="actions">
+            <button id="btnRefreshSamples">Refresh</button>
+        </div>
+        <div id="samplesList"></div>
+        <div id="sampleViewer"></div>
+    </section>
+
+    <section class="panel tabpanel hidden" id="tab-images">
+        <h2>Downloaded images</h2>
+        <p class="note">Leased URLs expire after 15 days, so images must be copied into local storage to be usable.</p>
+        <div class="actions">
+            <button id="btnRefreshImages">Refresh</button>
+        </div>
+        <div id="imagesGrid"></div>
+    </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

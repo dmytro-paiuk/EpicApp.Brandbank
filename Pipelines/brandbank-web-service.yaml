@@ -1,0 +1,73 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: '$(BUILD_CONFIGURATION)'
+  projects: |
+    EpicApp.Brandbank.Web/EpicApp.Brandbank.Web.csproj
+
+steps:
+  - task: UseDotNet@2
+    displayName: 'Install .NET 9.0'
+    inputs:
+      packageType: 'sdk'
+      version: '9.0.x'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: 'restore'
+      projects: $(projects)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: 'build'
+      arguments: '--configuration $(buildConfiguration)'
+      projects: $(projects)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet publish'
+    inputs:
+      command: 'publish'
+      publishWebProjects: false
+      projects: $(projects)
+      arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+      zipAfterPublish: false
+
+  # === Point the page at the deployed API ===
+  - task: Bash@3
+    displayName: 'Set ApiBaseUrl'
+    inputs:
+      targetType: 'inline'
+      script: |
+        CONFIG=$(Build.ArtifactStagingDirectory)/EpicApp.Brandbank.Web/wwwroot/appsettings.json
+        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\"}" > $CONFIG
+        cat $CONFIG
+
+  # Debug steps
+  - script: |
+      find $(Build.ArtifactStagingDirectory) -type f
+    displayName: 'Print Build.ArtifactStagingDirectory'
+
+  - task: CmdLine@2
+    displayName: 'Print ArtifactStagingDirectory/EpicApp.Brandbank.Web/wwwroot'
+    inputs:
+      script: |
+        ls -a
+      workingDirectory: '$(Build.ArtifactStagingDirectory)/EpicApp.Brandbank.Web/wwwroot'
+
+  # deploy step
+  - task: AzureStaticWebApp@0
+    displayName: 'Static Web App'
+    inputs:
+      cwd: '$(Build.ArtifactStagingDirectory)'
+      app_location: '/EpicApp.Brandbank.Web/wwwroot/'
+      skip_app_build: true
+      skip_api_build: true
+      output_location: ''
+    env:
+      azure_static_web_apps_api_token: '$(AZURE_STATIC_WEB_APPS_API_TOKEN)'

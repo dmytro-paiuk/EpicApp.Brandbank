@@ -1,0 +1,60 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: '$(BUILD_CONFIGURATION)'
+  azureSubscription: 'epic-azure-connection-AdminConsole'
+  appName: '$(BRANDBANK_API_APP_SERVICE_NAME)' #epic-brandbank-poc-api
+
+  projects: |
+    EpicApp.Brandbank.Api/EpicApp.Brandbank.Api.csproj
+
+steps:
+  - task: UseDotNet@2
+    displayName: 'Install .NET 9.0'
+    inputs:
+      packageType: 'sdk'
+      version: '9.0.x'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: 'restore'
+      projects: $(projects)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: 'build'
+      arguments: '--configuration $(buildConfiguration)'
+      projects: $(projects)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet publish'
+    inputs:
+      command: 'publish'
+      publishWebProjects: false
+      projects: $(projects)
+      arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+      zipAfterPublish: true
+
+  - script: |
+      find $(Build.ArtifactStagingDirectory) -type f
+    displayName: 'Print Build.ArtifactStagingDirectory'
+
+  # === Deploy to Azure ===
+  # The Brandbank API key and the allowed web origin are set in App Service configuration,
+  # never in appsettings.json:
+  #   Brandbank__Feeds__0__ApiKey   the development feed key
+  #   Brandbank__Feeds__1__ApiKey   the live feed key
+  #   Cors__AllowedOrigins__0       the Static Web App URL
+  - task: AzureWebApp@1
+    displayName: 'Deploy to Azure App Service'
+    inputs:
+      azureSubscription: $(azureSubscription)
+      appType: 'webApp'
+      appName: $(appName)
+      package: '$(Build.ArtifactStagingDirectory)/EpicApp.Brandbank.Api.zip'
