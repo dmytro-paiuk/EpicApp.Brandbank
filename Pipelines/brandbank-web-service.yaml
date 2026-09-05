@@ -44,12 +44,33 @@ steps:
     inputs:
       targetType: 'inline'
       script: |
-        CONFIG=$(Build.ArtifactStagingDirectory)/EpicApp.Brandbank.Web/wwwroot/appsettings.json
-        # Both keys are written to the same deployed address. ApiBaseUrlHttps only exists to make
-        # local https development convenient; if it were left unset here, a stale cached copy of it
-        # could point the deployed page at localhost.
-        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\",\"ApiBaseUrlHttps\":\"$(BRANDBANK_API_BASE_URL)\"}" > $CONFIG
-        cat $CONFIG
+        set -euo pipefail
+
+        if [ -z "$(BRANDBANK_API_BASE_URL)" ]; then
+          echo "##vso[task.logissue type=error]BRANDBANK_API_BASE_URL is not set."
+          exit 1
+        fi
+
+        # Locate the published wwwroot rather than assuming the publish layout, which differs
+        # depending on whether the task appends the project name to the output path.
+        CONFIG=$(find "$(Build.ArtifactStagingDirectory)" -path '*/wwwroot/appsettings.json' | head -1)
+
+        if [ -z "$CONFIG" ]; then
+          echo "##vso[task.logissue type=error]No wwwroot/appsettings.json found under the staging directory."
+          find "$(Build.ArtifactStagingDirectory)" -type f
+          exit 1
+        fi
+
+        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\"}" > "$CONFIG"
+
+        echo "Patched $CONFIG:"
+        cat "$CONFIG"
+
+        # A deployed page must never point at a developer machine.
+        if grep -q "localhost" "$CONFIG"; then
+          echo "##vso[task.logissue type=error]Deployed config still references localhost."
+          exit 1
+        fi
 
   # Debug steps
   - script: |

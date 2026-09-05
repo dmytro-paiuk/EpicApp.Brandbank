@@ -5,81 +5,48 @@ const $ = (id) => document.getElementById(id);
 let apiBaseUrl = '';
 let configError = null;
 
+// Ports the API uses when run from this solution. Kept in code rather than in appsettings.json so
+// that a localhost address can never be shipped in the deployed config - the failure that causes
+// is a deployed page quietly calling a developer's machine.
+const LOCAL_API = { http: 'http://localhost:5221', https: 'https://localhost:7221' };
+
+const isLocalHost = (host) => host === 'localhost' || host === '127.0.0.1';
+
 async function loadConfig() {
+    // Running locally, the API is on a known port pair on this machine; no configuration needed.
+    if (isLocalHost(location.hostname)) {
+        apiBaseUrl = location.protocol === 'https:' ? LOCAL_API.https : LOCAL_API.http;
+        return;
+    }
+
+    // Deployed, the address comes from appsettings.json, which the web pipeline writes.
     try {
         const response = await fetch('appsettings.json', { cache: 'no-store' });
         if (response.ok) {
             const config = await response.json();
-
-            // Locally the API is reachable on both schemes, on different ports. Pick the one that
-            // matches this page, so an https page never has its calls blocked as mixed content.
-            // Deployed, only ApiBaseUrl is set and it is used whatever the scheme.
-            const preferred = location.protocol === 'https:' && config.ApiBaseUrlHttps
-                ? config.ApiBaseUrlHttps
-                : config.ApiBaseUrl;
-
-            apiBaseUrl = (preferred || '').replace(/\/+$/, '');
+            apiBaseUrl = (config.ApiBaseUrl || '').replace(/\/+$/, '');
         }
     } catch {
-        // Falls back to this origin, which is how the app runs when the two are served together.
+        // Handled below as a missing address.
     }
 
-    // A browser silently blocks an https page calling an http address, and the resulting
-    // failure is indistinguishable from the API being down. Say what is actually wrong.
-    const pageIsLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-    const apiIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiBaseUrl);
+    if (!apiBaseUrl) {
+        configError = 'No API address is configured for this deployment. The web pipeline should '
+            + 'write ApiBaseUrl into appsettings.json from the BRANDBANK_API_BASE_URL variable.';
+        return;
+    }
 
-    if (!pageIsLocal && apiIsLocal) {
-        configError = `This page is deployed at ${location.origin} but is configured to call `
-            + `${apiBaseUrl}, which only exists on a developer machine. The deployed `
-            + 'appsettings.json is stale - hard-refresh the page, and check that the web '
-            + 'pipeline set ApiBaseUrl to the deployed API address.';
-    } else if (location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiBaseUrl)) {
+        configError = `This page is deployed at ${location.origin} but appsettings.json points at `
+            + `${apiBaseUrl}, which only exists on a developer machine. The deployed config was not `
+            + 'rewritten by the pipeline.';
+        return;
+    }
+
+    if (location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
         configError = `This page is served over https, so the browser blocks calls to ${apiBaseUrl}. `
-            + 'Set ApiBaseUrl in appsettings.json to the https address of the API '
-            + '(https://localhost:7221 when running the API locally), or open this page over http.';
+            + 'Set BRANDBANK_API_BASE_URL to the https address of the API.';
     }
-}
-
-const escapeHtml = (value) =>
-    String(value ?? '').replace(/[&<>"']/g, (c) =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-const formatBytes = (bytes) => {
-    if (!bytes) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-};
-
-async function api(path, options = {}) {
-    if (configError) {
-        throw new Error(configError);
-    }
-
-    let response;
-    try {
-        response = await fetch(`${apiBaseUrl}/api/brandbank${path}`, {
-            headers: { 'Content-Type': 'application/json' },
-            ...options
-        });
-    } catch {
-        // fetch only throws like this when the request never completed: the API is not running,
-        // or it did not allow this origin.
-        throw new Error(`Could not reach the API at ${apiBaseUrl || location.origin}. `
-            + 'Check that the API project is running, and that this page\'s origin '
-            + `(${location.origin}) is listed in the API's Cors:AllowedOrigins.`);
-    }
-
-    const text = await response.text();
-    let payload = text;
-    try { payload = text ? JSON.parse(text) : null; } catch { /* non-JSON body is shown as-is */ }
-
-    if (!response.ok) {
-        throw new Error(payload?.message || payload || `Request failed with ${response.status}`);
-    }
-
-    return payload;
 }
 
 /* ---------- tabs ---------- */
