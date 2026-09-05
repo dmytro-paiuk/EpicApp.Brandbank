@@ -26,7 +26,15 @@ async function loadConfig() {
 
     // A browser silently blocks an https page calling an http address, and the resulting
     // failure is indistinguishable from the API being down. Say what is actually wrong.
-    if (location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
+    const pageIsLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+    const apiIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiBaseUrl);
+
+    if (!pageIsLocal && apiIsLocal) {
+        configError = `This page is deployed at ${location.origin} but is configured to call `
+            + `${apiBaseUrl}, which only exists on a developer machine. The deployed `
+            + 'appsettings.json is stale - hard-refresh the page, and check that the web '
+            + 'pipeline set ApiBaseUrl to the deployed API address.';
+    } else if (location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
         configError = `This page is served over https, so the browser blocks calls to ${apiBaseUrl}. `
             + 'Set ApiBaseUrl in appsettings.json to the https address of the API '
             + '(https://localhost:7221 when running the API locally), or open this page over http.';

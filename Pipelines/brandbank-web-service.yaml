@@ -45,7 +45,10 @@ steps:
       targetType: 'inline'
       script: |
         CONFIG=$(Build.ArtifactStagingDirectory)/EpicApp.Brandbank.Web/wwwroot/appsettings.json
-        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\"}" > $CONFIG
+        # Both keys are written to the same deployed address. ApiBaseUrlHttps only exists to make
+        # local https development convenient; if it were left unset here, a stale cached copy of it
+        # could point the deployed page at localhost.
+        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\",\"ApiBaseUrlHttps\":\"$(BRANDBANK_API_BASE_URL)\"}" > $CONFIG
         cat $CONFIG
 
   # Debug steps
