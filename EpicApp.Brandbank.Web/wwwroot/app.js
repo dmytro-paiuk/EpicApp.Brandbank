@@ -1,60 +1,21 @@
 const $ = (id) => document.getElementById(id);
 
-// The API is deployed separately, so its address comes from configuration rather than being
-// assumed to be this origin. Mirrors how the portal WASM app resolves ApiBaseUrl.
-let apiBaseUrl = '';
-let configError = null;
-
-// Ports the API uses when run from this solution. Kept in code rather than in appsettings.json so
-// that a localhost address can never be shipped in the deployed config - the failure that causes
-// is a deployed page quietly calling a developer's machine.
+// Both addresses are in code rather than in a fetched config file. Static Web Apps was serving a
+// gzip-compressed variant of that file built from an older deploy - with the current ETag and
+// Last-Modified on it - so browsers were stranded on a stale API address that no header, query
+// string or refresh could shift. Nothing to fetch means nothing the CDN can serve stale.
 const LOCAL_API = { http: 'http://localhost:5221', https: 'https://localhost:7221' };
+
+const DEPLOYED_API = 'https://brandbank-gtfnchhecxhwbqcb.westus3-01.azurewebsites.net';
 
 const isLocalHost = (host) => host === 'localhost' || host === '127.0.0.1';
 
-// Static Web Apps has been observed serving a gzip-compressed variant built from an OLDER version
-// of a file while reporting the current ETag and Last-Modified, so browsers (which always ask for
-// gzip) get stale content that no header, query string or refresh can defeat. The web pipeline
-// rewrites this constant to a build-stamped name and renames the file to match, so every deploy
-// requests a path the CDN has never compressed before.
-const CONFIG_FILE = 'config.json';
+// Local runs talk to the API on this machine; anything else is the deployed API.
+const apiBaseUrl = (isLocalHost(location.hostname)
+    ? (location.protocol === 'https:' ? LOCAL_API.https : LOCAL_API.http)
+    : DEPLOYED_API).replace(/\/+$/, '');
 
-async function loadConfig() {
-    // Running locally, the API is on a known port pair on this machine; no configuration needed.
-    if (isLocalHost(location.hostname)) {
-        apiBaseUrl = location.protocol === 'https:' ? LOCAL_API.https : LOCAL_API.http;
-        return;
-    }
-
-    // Deployed, the address comes from appsettings.json, which the web pipeline writes.
-    try {
-        const response = await fetch(`${CONFIG_FILE}?v=${Date.now()}`, { cache: 'no-store' });
-        if (response.ok) {
-            const config = await response.json();
-            apiBaseUrl = (config.ApiBaseUrl || '').replace(/\/+$/, '');
-        }
-    } catch {
-        // Handled below as a missing address.
-    }
-
-    if (!apiBaseUrl) {
-        configError = 'No API address is configured for this deployment. The web pipeline should '
-            + 'write ApiBaseUrl into config.json from the BRANDBANK_API_BASE_URL variable.';
-        return;
-    }
-
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiBaseUrl)) {
-        configError = `This page is deployed at ${location.origin} but config.json points at `
-            + `${apiBaseUrl}, which only exists on a developer machine. The deployed config was not `
-            + 'rewritten by the pipeline.';
-        return;
-    }
-
-    if (location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
-        configError = `This page is served over https, so the browser blocks calls to ${apiBaseUrl}. `
-            + 'Set BRANDBANK_API_BASE_URL to the https address of the API.';
-    }
-}
+const configError = null;
 
 const escapeHtml = (value) =>
     String(value ?? '').replace(/[&<>"']/g, (c) =>
@@ -456,4 +417,4 @@ async function loadImages() {
 
 $('btnRefreshImages').addEventListener('click', (e) => withBusy(e.target, loadImages));
 
-loadConfig().then(loadFeeds);
+loadFeeds();
