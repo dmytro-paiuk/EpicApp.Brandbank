@@ -6,8 +6,9 @@ pool:
 
 variables:
   buildConfiguration: '$(BUILD_CONFIGURATION)'
-  projects: |
-    EpicApp.Brandbank.Web/EpicApp.Brandbank.Web.csproj
+  # Single line rather than a YAML block: pipeline variables become environment variables for
+  # every task, and the Static Web App task warns that it cannot pass a multiline one through.
+  projects: 'EpicApp.Brandbank.Web/EpicApp.Brandbank.Web.csproj'
 
 steps:
   - task: UseDotNet@2

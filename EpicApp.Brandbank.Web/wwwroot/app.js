@@ -49,6 +49,48 @@ async function loadConfig() {
     }
 }
 
+const escapeHtml = (value) =>
+    String(value ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const formatBytes = (bytes) => {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+};
+
+async function api(path, options = {}) {
+    if (configError) {
+        throw new Error(configError);
+    }
+
+    let response;
+
+    try {
+        response = await fetch(`${apiBaseUrl}/api/brandbank${path}`, {
+            headers: { 'Content-Type': 'application/json' },
+            ...options
+        });
+    } catch {
+        // fetch only throws like this when the request never completed: the API is not running,
+        // or it did not allow this origin.
+        throw new Error(`Could not reach the API at ${apiBaseUrl || location.origin}. `
+            + "Check that the API is running, and that this page's origin "
+            + `(${location.origin}) is listed in the API's Cors:AllowedOrigins.`);
+    }
+
+    const text = await response.text();
+    let payload = text;
+    try { payload = text ? JSON.parse(text) : null; } catch { /* non-JSON body is shown as-is */ }
+
+    if (!response.ok) {
+        throw new Error(payload?.message || payload || `Request failed with ${response.status}`);
+    }
+
+    return payload;
+}
+
 /* ---------- tabs ---------- */
 
 document.querySelectorAll('.tab').forEach((tab) => {
