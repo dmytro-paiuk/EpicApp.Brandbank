@@ -6,7 +6,9 @@ pool:
 
 variables:
   buildConfiguration: '$(BUILD_CONFIGURATION)'
-  azureSubscription: 'epic-azure-connection-AdminConsole'
+  # Name of the Azure Resource Manager service connection in this Azure DevOps project.
+  # Project Settings > Service connections. It must be authorized for this pipeline.
+  azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
   appName: '$(BRANDBANK_API_APP_SERVICE_NAME)' #epic-brandbank-poc-api
 
   projects: |
