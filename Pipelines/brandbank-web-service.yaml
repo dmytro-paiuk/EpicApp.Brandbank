@@ -54,7 +54,7 @@ steps:
 
         # Locate the published wwwroot rather than assuming the publish layout, which differs
         # depending on whether the task appends the project name to the output path.
-        CONFIG=$(find "$(Build.ArtifactStagingDirectory)" -path '*/wwwroot/config.json' | head -1)
+        CONFIG=`find "$(Build.ArtifactStagingDirectory)" -path '*/wwwroot/config.json' | head -1`
 
         if [ -z "$CONFIG" ]; then
           echo "##vso[task.logissue type=error]No wwwroot/config.json found under the staging directory."
@@ -62,13 +62,34 @@ steps:
           exit 1
         fi
 
-        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\"}" > "$CONFIG"
+        WWWROOT=`dirname "$CONFIG"`
+        APPJS="$WWWROOT/app.js"
 
-        echo "Patched $CONFIG:"
-        cat "$CONFIG"
+        if [ ! -f "$APPJS" ]; then
+          echo "##vso[task.logissue type=error]app.js not found next to config.json."
+          exit 1
+        fi
 
-        # A deployed page must never point at a developer machine.
-        if grep -q "localhost" "$CONFIG"; then
+        # Static Web Apps can serve a gzip variant built from an older version of a path while
+        # reporting the current ETag, which strands browsers on stale config indefinitely. Giving
+        # the file a name unique to this build means the CDN has never compressed that path before.
+        STAMPED="config-$(Build.BuildId).json"
+
+        mv "$CONFIG" "$WWWROOT/$STAMPED"
+        echo "{\"ApiBaseUrl\":\"$(BRANDBANK_API_BASE_URL)\"}" > "$WWWROOT/$STAMPED"
+        sed -i "s|const CONFIG_FILE = 'config.json';|const CONFIG_FILE = '$STAMPED';|" "$APPJS"
+
+        echo "Config file: $STAMPED"
+        cat "$WWWROOT/$STAMPED"
+        grep -n "const CONFIG_FILE" "$APPJS"
+
+        # Fail the build rather than deploy a page that cannot reach its API.
+        if ! grep -q "const CONFIG_FILE = '$STAMPED';" "$APPJS"; then
+          echo "##vso[task.logissue type=error]app.js was not rewritten to reference $STAMPED."
+          exit 1
+        fi
+
+        if grep -q "localhost" "$WWWROOT/$STAMPED"; then
           echo "##vso[task.logissue type=error]Deployed config still references localhost."
           exit 1
         fi

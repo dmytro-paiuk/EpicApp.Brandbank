@@ -12,6 +12,13 @@ const LOCAL_API = { http: 'http://localhost:5221', https: 'https://localhost:722
 
 const isLocalHost = (host) => host === 'localhost' || host === '127.0.0.1';
 
+// Static Web Apps has been observed serving a gzip-compressed variant built from an OLDER version
+// of a file while reporting the current ETag and Last-Modified, so browsers (which always ask for
+// gzip) get stale content that no header, query string or refresh can defeat. The web pipeline
+// rewrites this constant to a build-stamped name and renames the file to match, so every deploy
+// requests a path the CDN has never compressed before.
+const CONFIG_FILE = 'config.json';
+
 async function loadConfig() {
     // Running locally, the API is on a known port pair on this machine; no configuration needed.
     if (isLocalHost(location.hostname)) {
@@ -21,12 +28,7 @@ async function loadConfig() {
 
     // Deployed, the address comes from appsettings.json, which the web pipeline writes.
     try {
-        // Named config.json rather than appsettings.json: Static Web Apps was caching a stale
-        // gzip-compressed variant of the old name and serving it to every browser (which all send
-        // Accept-Encoding: gzip) while returning the current file to uncompressed requests. Query
-        // strings did not bypass it. staticwebapp.config.json sets no-store on this route so the
-        // CDN cannot hold a compressed copy of it again.
-        const response = await fetch(`config.json?v=${Date.now()}`, { cache: 'no-store' });
+        const response = await fetch(`${CONFIG_FILE}?v=${Date.now()}`, { cache: 'no-store' });
         if (response.ok) {
             const config = await response.json();
             apiBaseUrl = (config.ApiBaseUrl || '').replace(/\/+$/, '');
