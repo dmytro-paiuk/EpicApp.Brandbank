@@ -21,7 +21,12 @@ async function loadConfig() {
 
     // Deployed, the address comes from appsettings.json, which the web pipeline writes.
     try {
-        const response = await fetch('appsettings.json', { cache: 'no-store' });
+        // Named config.json rather than appsettings.json: Static Web Apps was caching a stale
+        // gzip-compressed variant of the old name and serving it to every browser (which all send
+        // Accept-Encoding: gzip) while returning the current file to uncompressed requests. Query
+        // strings did not bypass it. staticwebapp.config.json sets no-store on this route so the
+        // CDN cannot hold a compressed copy of it again.
+        const response = await fetch(`config.json?v=${Date.now()}`, { cache: 'no-store' });
         if (response.ok) {
             const config = await response.json();
             apiBaseUrl = (config.ApiBaseUrl || '').replace(/\/+$/, '');
@@ -32,12 +37,12 @@ async function loadConfig() {
 
     if (!apiBaseUrl) {
         configError = 'No API address is configured for this deployment. The web pipeline should '
-            + 'write ApiBaseUrl into appsettings.json from the BRANDBANK_API_BASE_URL variable.';
+            + 'write ApiBaseUrl into config.json from the BRANDBANK_API_BASE_URL variable.';
         return;
     }
 
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiBaseUrl)) {
-        configError = `This page is deployed at ${location.origin} but appsettings.json points at `
+        configError = `This page is deployed at ${location.origin} but config.json points at `
             + `${apiBaseUrl}, which only exists on a developer machine. The deployed config was not `
             + 'rewritten by the pipeline.';
         return;

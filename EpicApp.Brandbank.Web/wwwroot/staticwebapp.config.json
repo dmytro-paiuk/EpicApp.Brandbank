@@ -2,6 +2,14 @@
   "navigationFallback": {
     "rewrite": "/index.html"
   },
+  "routes": [
+    {
+      "route": "/config.json",
+      "headers": {
+        "cache-control": "no-store, no-cache, must-revalidate"
+      }
+    }
+  ],
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "referrer-policy": "no-referrer"

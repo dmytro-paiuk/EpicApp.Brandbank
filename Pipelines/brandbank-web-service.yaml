@@ -54,10 +54,10 @@ steps:
 
         # Locate the published wwwroot rather than assuming the publish layout, which differs
         # depending on whether the task appends the project name to the output path.
-        CONFIG=$(find "$(Build.ArtifactStagingDirectory)" -path '*/wwwroot/appsettings.json' | head -1)
+        CONFIG=$(find "$(Build.ArtifactStagingDirectory)" -path '*/wwwroot/config.json' | head -1)
 
         if [ -z "$CONFIG" ]; then
-          echo "##vso[task.logissue type=error]No wwwroot/appsettings.json found under the staging directory."
+          echo "##vso[task.logissue type=error]No wwwroot/config.json found under the staging directory."
           find "$(Build.ArtifactStagingDirectory)" -type f
           exit 1
         fi
