@@ -10,7 +10,12 @@ var options = builder.Configuration.GetSection(BrandbankOptions.SectionName).Get
 
 // The web front-end is deployed separately, so it calls this API cross-origin.
 // Origins are listed explicitly - a wildcard would let any page on the internet drive the feed.
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+// Trailing slashes are trimmed because an Origin header never carries a path - a configured
+// "https://host/" would silently match nothing and every call would fail as a CORS error.
+var allowedOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .Select(origin => origin.TrimEnd('/'))
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .ToArray();
 
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy =>
 {
