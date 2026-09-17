@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics;
 using EpicApp.Brandbank.Api.Configuration;
 using EpicApp.Brandbank.Api.Endpoints;
 using EpicApp.Brandbank.Api.Services;
@@ -44,9 +45,31 @@ builder.Services.AddHttpClient<ImageDownloader>(http =>
 
 builder.Services.AddSingleton<PayloadStore>();
 builder.Services.AddSingleton<PayloadInspector>();
+builder.Services.AddSingleton<CoverageValidator>();
 builder.Services.AddScoped<BrandbankFeedService>();
 
 var app = builder.Build();
+
+// Runs before UseCors so that a failure response still carries the CORS headers. Without this an
+// unhandled exception returns a bare 500 that the browser refuses to read, and the page reports the
+// API as unreachable when it is actually running and returning an error.
+app.UseExceptionHandler(handler => handler.Run(async context =>
+{
+    var feature = context.Features.Get<IExceptionHandlerFeature>();
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+
+    logger.LogError(feature?.Error, "Unhandled exception for {Method} {Path}",
+        context.Request.Method, context.Request.Path);
+
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/json";
+
+    await context.Response.WriteAsJsonAsync(new
+    {
+        message = feature?.Error.Message ?? "The request failed.",
+        type = feature?.Error.GetType().Name
+    });
+}));
 
 app.UseCors();
 

@@ -101,9 +101,15 @@
         </div>
         <label class="block" for="coverageJson">Coverage JSON</label>
         <textarea id="coverageJson" rows="14" spellcheck="false"></textarea>
+        <p class="note">
+            Barcodes are checked before upload. Brandbank accepts a file with unmatchable barcodes and replies
+            <strong>200 OK</strong>, then returns nothing, so a bad file is only visible here.
+        </p>
         <div class="actions">
+            <button id="btnCoverageValidate">Validate barcodes</button>
             <button id="btnCoverage" class="primary">Upload coverage</button>
         </div>
+        <div id="coverageValidation"></div>
         <div id="coverageResult"></div>
     </section>
 

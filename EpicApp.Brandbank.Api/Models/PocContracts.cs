@@ -9,7 +9,32 @@ public record GetLastRequest(string Feed);
 
 public record ResendRequest(string Feed, List<ResendRequestItem> Items);
 
-public record CoverageUploadRequest(string Feed, string CoverageJson);
+/// <summary>
+/// AllowInvalidGtins must be set explicitly to upload a file whose barcodes fail validation - Brandbank
+/// would accept it and then match nothing.
+/// </summary>
+public record CoverageUploadRequest(string Feed, string CoverageJson, bool AllowInvalidGtins = false);
+
+public record CoverageValidateRequest(string CoverageJson);
+
+/// <summary>
+/// Outcome of checking a coverage file's barcodes. FixedCoverageJson is the same file with check
+/// digits restored, returned only when there is something to fix; every other field is preserved.
+/// </summary>
+public record CoverageValidationResult(
+    int Products,
+    int Gtins,
+    int Valid,
+    int Invalid,
+    bool LikelyMissingCheckDigits,
+    string Summary,
+    List<GtinIssue> Issues,
+    int TotalIssues,
+    int FixedCount,
+    string? FixedCoverageJson);
+
+/// <summary>Row is 1-based to match how people count products in the file.</summary>
+public record GtinIssue(int Row, string? RetailerId, string? Description, string Gtin, string Problem, string? Suggested);
 
 public record ImageDownloadRequest(string? SampleId, List<string> Urls);
 

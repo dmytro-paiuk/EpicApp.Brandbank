@@ -323,14 +323,118 @@ $('btnCoverageSample').addEventListener('click', (e) => withBusy(e.target, async
     $('coverageJson').value = await response.text();
 }));
 
-$('btnCoverage').addEventListener('click', (e) => withBusy(e.target, async () => {
+/* ---------- coverage barcode validation ---------- */
+
+// The file is only considered checked for exactly the text that was validated; any edit resets it.
+let validatedCoverage = null;
+
+$('coverageJson').addEventListener('input', () => {
+    validatedCoverage = null;
+    $('coverageValidation').innerHTML = '';
+});
+
+async function validateCoverage() {
+    const coverageJson = $('coverageJson').value;
+    const result = await api('/coverage/validate', {
+        method: 'POST',
+        body: JSON.stringify({ coverageJson })
+    });
+
+    validatedCoverage = { text: coverageJson, result };
+    renderValidation(result);
+    return result;
+}
+
+function renderValidation(result) {
+    const clean = result.totalIssues === 0;
+    const pill = clean
+        ? '<span class="pill ok">Barcodes valid</span>'
+        : `<span class="pill ${result.likelyMissingCheckDigits ? 'err' : 'warn'}">${result.totalIssues} barcode issue(s)</span>`;
+
+    const rows = result.issues.map((i) => `
+        <tr>
+            <td>${i.row}</td>
+            <td>${escapeHtml(i.retailerId ?? '')}</td>
+            <td>${escapeHtml(i.description ?? '')}</td>
+            <td class="url">${escapeHtml(i.gtin)}</td>
+            <td class="url">${escapeHtml(i.suggested ?? '')}</td>
+            <td>${escapeHtml(i.problem)}</td>
+        </tr>`).join('');
+
+    const more = result.totalIssues > result.issues.length
+        ? `<p class="hint">Showing the first ${result.issues.length} of ${result.totalIssues}.</p>`
+        : '';
+
+    $('coverageValidation').innerHTML = `
+        <div class="result">
+            <div class="result-head">
+                ${pill}
+                <span class="hint">${result.products} product(s) &middot; ${result.gtins} barcode(s) &middot; ${result.valid} pass the check digit</span>
+            </div>
+            <p class="result-msg">${escapeHtml(result.summary)}</p>
+            ${clean ? '' : `
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Row</th><th>Retailer ID</th><th>Description</th><th>Barcode</th><th>Corrected</th><th>Problem</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            ${more}
+            <div class="actions">
+                ${result.fixedCoverageJson ? `<button id="btnCoverageFix" class="primary">Fix ${result.fixedCount} barcode(s)</button>` : ''}
+                <button id="btnCoverageUploadAnyway">Upload anyway</button>
+            </div>`}
+        </div>`;
+
+    $('btnCoverageFix')?.addEventListener('click', (e) => withBusy(e.target, async () => {
+        $('coverageJson').value = result.fixedCoverageJson;
+        const recheck = await validateCoverage();
+        if (recheck.totalIssues === 0) {
+            $('coverageValidation').insertAdjacentHTML('afterbegin',
+                `<p class="result-msg"><b>Fixed ${result.fixedCount} barcode(s).</b> Review the JSON, then upload.</p>`);
+        }
+    }));
+
+    $('btnCoverageUploadAnyway')?.addEventListener('click', (e) => withBusy(e.target, () => uploadCoverage(true)));
+}
+
+async function uploadCoverage(allowInvalidGtins) {
     try {
         renderCallResult('coverageResult', await api('/coverage', {
             method: 'POST',
-            body: JSON.stringify({ feed: currentFeed(), coverageJson: $('coverageJson').value })
+            body: JSON.stringify({ feed: currentFeed(), coverageJson: $('coverageJson').value, allowInvalidGtins })
         }));
     } catch (err) {
         renderError('coverageResult', err.message);
+    }
+}
+
+$('btnCoverageValidate').addEventListener('click', (e) => withBusy(e.target, async () => {
+    $('coverageResult').innerHTML = '';
+    try {
+        await validateCoverage();
+    } catch (err) {
+        renderError('coverageValidation', err.message);
+    }
+}));
+
+$('btnCoverage').addEventListener('click', (e) => withBusy(e.target, async () => {
+    $('coverageResult').innerHTML = '';
+
+    try {
+        const current = $('coverageJson').value;
+        const result = validatedCoverage?.text === current
+            ? validatedCoverage.result
+            : await validateCoverage();
+
+        // Problems stop the upload here; the report above offers the fix or an explicit override.
+        if (result.totalIssues > 0) {
+            return;
+        }
+
+        await uploadCoverage(false);
+    } catch (err) {
+        renderError('coverageValidation', err.message);
     }
 }));
 

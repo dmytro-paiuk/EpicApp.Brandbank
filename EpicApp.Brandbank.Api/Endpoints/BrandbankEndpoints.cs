@@ -75,10 +75,23 @@ public static class BrandbankEndpoints
             }
         });
 
+        group.MapPost("/coverage/validate", (CoverageValidateRequest request, CoverageValidator validator) =>
+        {
+            try
+            {
+                return Results.Ok(validator.Validate(request.CoverageJson));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+        });
+
         group.MapPost("/coverage", async (
             CoverageUploadRequest request,
             IOptions<BrandbankOptions> options,
             BrandbankFeedService service,
+            CoverageValidator validator,
             CancellationToken ct) =>
         {
             var feed = Resolve(options.Value, request.Feed, out var error);
@@ -89,6 +102,14 @@ public static class BrandbankEndpoints
 
             try
             {
+                // Checked here as well as on the page, so the API cannot be used to push a file of
+                // unmatchable barcodes without saying so explicitly.
+                var validation = validator.Validate(request.CoverageJson);
+                if (validation.TotalIssues > 0 && !request.AllowInvalidGtins)
+                {
+                    return Results.BadRequest(new { message = $"Upload blocked. {validation.Summary}", validation });
+                }
+
                 var result = await service.UploadCoverageAsync(feed, request.CoverageJson, ct);
                 return Results.Ok(new
                 {
