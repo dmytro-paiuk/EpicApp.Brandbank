@@ -16,20 +16,3 @@ public class ResendRequestItem
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Gtin { get; set; }
 }
-
-/// <summary>
-/// Resend response item. "resent" is the number of product versions queued
-/// and comes back as a number for pvid requests and a string for gtin requests.
-/// </summary>
-public class ResendResponseItem
-{
-    [JsonPropertyName("pvid")]
-    public string? Pvid { get; set; }
-
-    [JsonPropertyName("gtin")]
-    public string? Gtin { get; set; }
-
-    [JsonPropertyName("resent")]
-    [JsonConverter(typeof(FlexibleStringConverter))]
-    public string? Resent { get; set; }
-}
