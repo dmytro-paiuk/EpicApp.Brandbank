@@ -125,6 +125,56 @@ public static class BrandbankEndpoints
             }
         });
 
+        // Payloads captured before the database and blob storage existed are still on disk. This
+        // replays them into SQL and pulls their images, for as long as the 15-day leases hold.
+        group.MapPost("/samples/reimport", async (
+            ReimportRequest request,
+            PayloadStore store,
+            ProductStore products,
+            ImageDownloader downloader,
+            CancellationToken ct) =>
+        {
+            var all = store.List().OrderBy(s => s.CapturedUtc).ToList();
+            var skip = Math.Max(0, request.Skip ?? 0);
+            var take = Math.Clamp(request.Take ?? 10, 1, 100);
+            var batch = all.Skip(skip).Take(take).ToList();
+
+            var results = new List<ReimportSampleResult>();
+
+            foreach (var sample in batch)
+            {
+                try
+                {
+                    var body = await store.ReadAsync(sample.Id, ct);
+                    if (body is null)
+                    {
+                        results.Add(new ReimportSampleResult(sample.Id, sample.CapturedUtc, 0, 0, 0, 0, "Payload file missing."));
+                        continue;
+                    }
+
+                    var stored = await products.SavePayloadAsync(body, sample.Id, ct);
+
+                    var images = request.DownloadImages
+                        ? await downloader.DownloadPayloadAsync(body, ct)
+                        : [];
+
+                    results.Add(new ReimportSampleResult(
+                        sample.Id, sample.CapturedUtc, stored.Inserted, stored.Updated,
+                        images.Count(i => i.Success), images.Count(i => !i.Success), null));
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new ReimportSampleResult(sample.Id, sample.CapturedUtc, 0, 0, 0, 0, ex.Message));
+                }
+            }
+
+            return Results.Ok(new ReimportResult(
+                all.Count, batch.Count, skip, Math.Max(0, all.Count - (skip + batch.Count)),
+                results.Sum(r => r.Inserted), results.Sum(r => r.Updated),
+                results.Sum(r => r.ImagesStored), results.Sum(r => r.ImagesFailed),
+                results));
+        });
+
         group.MapGet("/samples", (PayloadStore store) => Results.Ok(store.List()));
 
         group.MapGet("/samples/{id}", async (string id, PayloadStore store, CancellationToken ct) =>

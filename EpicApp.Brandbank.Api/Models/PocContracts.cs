@@ -85,3 +85,28 @@ public record StoredImageInfo(string File, long Bytes, DateTime CapturedUtc);
 
 public record ProductUpsertResult(int Inserted, int Updated, int Skipped, int Images);
 
+/// <summary>
+/// Re-imports payloads that were captured before the database and blob storage existed. Processed in
+/// pages because a full run downloads thousands of images and would outlast a single request.
+/// </summary>
+public record ReimportRequest(int? Skip, int? Take, bool DownloadImages = true);
+
+public record ReimportSampleResult(
+    string SampleId,
+    DateTime CapturedUtc,
+    int Inserted,
+    int Updated,
+    int ImagesStored,
+    int ImagesFailed,
+    string? Error);
+
+public record ReimportResult(
+    int TotalSamples,
+    int Processed,
+    int Skip,
+    int Remaining,
+    int Inserted,
+    int Updated,
+    int ImagesStored,
+    int ImagesFailed,
+    List<ReimportSampleResult> Samples);
