@@ -1,5 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
+// Image names are paths (barcode/shot-type.png), so each segment is encoded on its own.
+const imagePath = (name) => String(name).split('/').map(encodeURIComponent).join('/');
+
 // Both addresses are in code rather than in a fetched config file. Static Web Apps was serving a
 // gzip-compressed variant of that file built from an older deploy - with the current ETag and
 // Last-Modified on it - so browsers were stranded on a stale API address that no header, query
@@ -228,7 +231,7 @@ function wireDownloadButtons(scope) {
                     </table></div>` : ''}
                     <div class="grid">${ok.map((r) => `
                         <div class="card">
-                            <img src="${apiBaseUrl}/api/brandbank/images/${encodeURIComponent(r.file)}" alt="${escapeHtml(r.file)}" loading="lazy"/>
+                            <img src="${apiBaseUrl}/api/brandbank/images/${imagePath(r.file)}" alt="${escapeHtml(r.file)}" loading="lazy"/>
                             <div class="name">${escapeHtml(r.file)}<br/>${formatBytes(r.bytes)}</div>
                         </div>`).join('')}</div>`;
             } catch (err) {
@@ -510,7 +513,7 @@ async function loadImages() {
         container.innerHTML = images.length
             ? `<div class="grid">${images.map((i) => `
                 <div class="card">
-                    <img src="${apiBaseUrl}/api/brandbank/images/${encodeURIComponent(i.file)}" alt="${escapeHtml(i.file)}" loading="lazy"/>
+                    <img src="${apiBaseUrl}/api/brandbank/images/${imagePath(i.file)}" alt="${escapeHtml(i.file)}" loading="lazy"/>
                     <div class="name">${escapeHtml(i.file)}<br/>${formatBytes(i.bytes)}</div>
                 </div>`).join('')}</div>`
             : '<p class="empty">No images downloaded yet.</p>';

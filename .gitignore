@@ -484,6 +484,7 @@ $RECYCLE.BIN/
 *.swp
 
 # Captured Brandbank payloads and downloaded images are local review artifacts.
-EpicApp.Brandbank.Poc/App_Data/samples/*
-EpicApp.Brandbank.Poc/App_Data/images/*
-!EpicApp.Brandbank.Poc/App_Data/**/.gitkeep
+EpicApp.Brandbank.Api/App_Data/samples/*
+EpicApp.Brandbank.Api/App_Data/images/*
+EpicApp.Brandbank.Api/App_Data/*.db
+!EpicApp.Brandbank.Api/App_Data/**/.gitkeep

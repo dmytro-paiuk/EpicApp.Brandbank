@@ -15,6 +15,8 @@ public class BrandbankFeedService(
     BrandbankClient client,
     PayloadStore store,
     PayloadInspector inspector,
+    ProductStore products,
+    ImageDownloader downloader,
     IOptions<BrandbankOptions> options,
     ILogger<BrandbankFeedService> logger)
 {
@@ -131,6 +133,17 @@ public class BrandbankFeedService(
         var productCount = inspector.CountProducts(result.Body);
         var images = inspector.ExtractImages(result.Body);
         var sample = await store.SaveAsync(feed, endpoint, result.Body, productCount, ct);
+
+        // The payload file is the raw record; the table is the current state of each product,
+        // keyed by GTIN, so a product arriving again updates its row rather than adding another.
+        var stored = await products.SavePayloadAsync(result.Body, sample.Id, ct);
+
+        // Straight away, not on a later click: the image URLs are 15-day leases and this batch will
+        // not be queued again without an explicit resend.
+        var downloaded = _options.DownloadImagesOnFetch
+            ? await downloader.DownloadPayloadAsync(result.Body, ct)
+            : [];
+
         var hash = PayloadStore.Hash(result.Body);
 
         LastPayloadHashes[feed] = hash;
@@ -140,7 +153,12 @@ public class BrandbankFeedService(
             endpoint,
             result.StatusCode,
             "Success",
-            $"Received {productCount} product(s) and {images.Count} image URL(s). Call again until you get a 204.",
+            $"Received {productCount} product(s) and {images.Count} image URL(s). "
+            + $"Product table: {stored.Inserted} new, {stored.Updated} updated. "
+            + (_options.DownloadImagesOnFetch
+                ? $"Images stored: {downloaded.Count(d => d.Success)} of {downloaded.Count}. "
+                : string.Empty)
+            + "Call again until you get a 204.",
             result.ElapsedMs,
             productCount,
             sample.Id,

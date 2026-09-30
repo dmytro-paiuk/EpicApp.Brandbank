@@ -80,3 +80,40 @@ public record ImageDownloadResult(
 public record SampleInfo(string Id, string File, string Endpoint, string Feed, DateTime CapturedUtc, long Bytes, int ProductCount);
 
 public record StoredImageInfo(string File, long Bytes, DateTime CapturedUtc);
+
+/* ---------- product table ---------- */
+
+public record ProductUpsertResult(int Inserted, int Updated, int Skipped, int Images);
+
+public record ProductRow(
+    string Gtin,
+    string? Description,
+    string? Pvid,
+    string? UpdateType,
+    string? TargetMarkets,
+    string? VersionDateTime,
+    string LastUpdatedUtc,
+    int Images,
+    int ImagesDownloaded);
+
+public record ProductPage(List<ProductRow> Items, int Total, int Page, int PageSize);
+
+public record ProductImageRow(
+    string? ShotType,
+    string? MimeType,
+    int? Width,
+    int? Height,
+    string? SourceUrl,
+    string? LocalFile,
+    string? DownloadedUtc);
+
+public record ProductDetail(
+    string Gtin,
+    string? Description,
+    string? Pvid,
+    string? UpdateType,
+    string LastUpdatedUtc,
+    List<ProductImageRow> Images,
+    string PayloadJson);
+
+public record ProductStats(int Products, int Discontinued, int Images, int ImagesDownloaded, string DatabasePath);

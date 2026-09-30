@@ -150,33 +150,33 @@ public static class BrandbankEndpoints
             PayloadInspector inspector,
             CancellationToken ct) =>
         {
-            var urls = request.Urls ?? [];
-
-            // With no explicit list, take every image URL in the named sample.
-            if (urls.Count == 0 && !string.IsNullOrWhiteSpace(request.SampleId))
+            // Images are normally pulled the moment a batch arrives; this re-fetches them for a saved
+            // payload, which only works while the 15-day leases are still valid.
+            if (!string.IsNullOrWhiteSpace(request.SampleId))
             {
                 var body = await store.ReadAsync(request.SampleId, ct);
-                if (body is null)
-                {
-                    return Results.NotFound(new { message = $"Sample '{request.SampleId}' was not found." });
-                }
-
-                urls = inspector.ExtractImages(body).Select(i => i.Url).ToList();
+                return body is null
+                    ? Results.NotFound(new { message = $"Sample '{request.SampleId}' was not found." })
+                    : Results.Ok(await downloader.DownloadPayloadAsync(body, ct));
             }
 
+            var urls = request.Urls ?? [];
             return urls.Count == 0
                 ? Results.BadRequest(new { message = "No image URLs to download." })
-                : Results.Ok(await downloader.DownloadAsync(urls, request.SampleId, ct));
+                : Results.Ok(await downloader.DownloadAsync(urls, "unknown", ct));
         });
 
-        group.MapGet("/images", (ImageDownloader downloader) => Results.Ok(downloader.List()));
+        group.MapGet("/images", async (ImageDownloader downloader, CancellationToken ct) =>
+            Results.Ok(await downloader.ListAsync(ct)));
 
-        group.MapGet("/images/{file}", (string file, ImageDownloader downloader) =>
+        // The blob container stays private, so images are streamed back through the API rather than
+        // linked to directly.
+        group.MapGet("/images/{*name}", async (string name, ImageDownloader downloader, CancellationToken ct) =>
         {
-            var path = downloader.ResolvePath(file);
-            return path is null
+            var image = await downloader.OpenAsync(name, ct);
+            return image is null
                 ? Results.NotFound()
-                : Results.File(path, ContentTypeFor(path));
+                : Results.Stream(image.Value.Content, image.Value.ContentType);
         });
 
         // Builds a valid coverage body from the documented fields so the upload can be tried end to end.
@@ -218,13 +218,4 @@ public static class BrandbankEndpoints
         }
     ];
 
-    private static string ContentTypeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".png" => "image/png",
-        ".gif" => "image/gif",
-        ".webp" => "image/webp",
-        ".tif" or ".tiff" => "image/tiff",
-        ".bmp" => "image/bmp",
-        _ => "image/jpeg"
-    };
 }

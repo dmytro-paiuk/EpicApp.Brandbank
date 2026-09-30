@@ -20,6 +20,15 @@ public class BrandbankOptions
     /// <summary>Where images pulled from the 15-day leased URLs are written.</summary>
     public string ImageStorePath { get; set; } = "App_Data/images";
 
+    /// <summary>Blob container that holds the downloaded images.</summary>
+    public string BlobContainer { get; set; } = "brandbank-images";
+
+    /// <summary>
+    /// Download images as soon as a batch arrives. The URLs are 15-day leases and the queue does not
+    /// hand the same batch out twice, so deferring the download risks losing the images entirely.
+    /// </summary>
+    public bool DownloadImagesOnFetch { get; set; } = true;
+
     /// <summary>Products per GetNext call. 1 by default; up to 1000 per the API docs.</summary>
     public int DefaultProductBatchSize { get; set; } = 1;
 

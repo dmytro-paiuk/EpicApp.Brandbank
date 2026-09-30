@@ -46,6 +46,8 @@ builder.Services.AddHttpClient<ImageDownloader>(http =>
 builder.Services.AddSingleton<PayloadStore>();
 builder.Services.AddSingleton<PayloadInspector>();
 builder.Services.AddSingleton<CoverageValidator>();
+builder.Services.AddSingleton<ProductStore>();
+builder.Services.AddSingleton<ImageStore>();
 builder.Services.AddScoped<BrandbankFeedService>();
 
 var app = builder.Build();

@@ -1,36 +1,65 @@
-using System.Security.Cryptography;
-using System.Text;
-using EpicApp.Brandbank.Api.Configuration;
+using System.Text.Json.Nodes;
 using EpicApp.Brandbank.Api.Models;
-using Microsoft.Extensions.Options;
 
 namespace EpicApp.Brandbank.Api.Services;
 
 /// <summary>
-/// Pulls images from the leased URLs in a payload into local storage. The lease lasts 15 days and
-/// a 404 usually means it has expired or that shot type is not available for the product.
+/// Pulls images from the leased URLs in a payload into permanent storage. The lease lasts 15 days
+/// and a 404 usually means it has expired or that shot type is not available for the product.
 /// </summary>
-public class ImageDownloader(HttpClient http, IOptions<BrandbankOptions> options, IWebHostEnvironment env, ILogger<ImageDownloader> logger)
+public class ImageDownloader(
+    HttpClient http,
+    ImageStore store,
+    ProductStore products,
+    ILogger<ImageDownloader> logger)
 {
-    private readonly BrandbankOptions _options = options.Value;
+    public string StorageDescription => store.Description;
 
-    private string Root => Path.Combine(env.ContentRootPath, _options.ImageStorePath);
-
-    public async Task<List<ImageDownloadResult>> DownloadAsync(IEnumerable<string> urls, string? sampleId, CancellationToken ct)
+    /// <summary>
+    /// Downloads every image in a payload, filing each under its product and shot type. Called as
+    /// soon as a batch arrives, because the URLs are leases and the queue does not hand them out twice.
+    /// </summary>
+    public async Task<List<ImageDownloadResult>> DownloadPayloadAsync(string body, CancellationToken ct)
     {
-        Directory.CreateDirectory(Root);
-
         var results = new List<ImageDownloadResult>();
 
-        foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var product in ProductStore.EnumerateProducts(body))
         {
-            results.Add(await DownloadOneAsync(url, sampleId, ct));
+            var gtin = ProductStore.NormaliseGtin(Text(product, "gtin")) ?? "unknown";
+
+            if (product["images"] is not JsonArray images)
+            {
+                continue;
+            }
+
+            foreach (var image in images.OfType<JsonObject>())
+            {
+                var url = Text(image["url"], "href");
+
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    results.Add(await DownloadOneAsync(url, gtin, Text(image, "shotType") ?? "image", ct));
+                }
+            }
         }
 
         return results;
     }
 
-    private async Task<ImageDownloadResult> DownloadOneAsync(string url, string? sampleId, CancellationToken ct)
+    /// <summary>Downloads a loose list of URLs, used when re-fetching images for a saved payload.</summary>
+    public async Task<List<ImageDownloadResult>> DownloadAsync(IEnumerable<string> urls, string gtin, CancellationToken ct)
+    {
+        var results = new List<ImageDownloadResult>();
+
+        foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            results.Add(await DownloadOneAsync(url, gtin, "image", ct));
+        }
+
+        return results;
+    }
+
+    private async Task<ImageDownloadResult> DownloadOneAsync(string url, string gtin, string shotType, CancellationToken ct)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
@@ -53,79 +82,27 @@ public class ImageDownloader(HttpClient http, IOptions<BrandbankOptions> options
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(ct);
-            var contentType = response.Content.Headers.ContentType?.MediaType;
-            var file = BuildFileName(uri, sampleId, contentType);
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
 
-            await File.WriteAllBytesAsync(Path.Combine(Root, file), bytes, ct);
+            var stored = await store.SaveAsync(gtin, shotType, bytes, contentType, ct);
+            await products.MarkImageStoredAsync(url, stored.Name, stored.Url, stored.Bytes, ct);
 
-            logger.LogInformation("Downloaded image {File} ({Bytes} bytes, {ContentType})", file, bytes.Length, contentType);
+            logger.LogInformation("Stored {ShotType} for {Gtin} ({Bytes} bytes)", shotType, gtin, stored.Bytes);
 
-            return new ImageDownloadResult(url, true, status, file, bytes.Length, contentType, null);
+            return new ImageDownloadResult(url, true, status, stored.Name, stored.Bytes, contentType, null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            logger.LogWarning(ex, "Image download failed for {Url}", uri.AbsolutePath);
+            logger.LogWarning(ex, "Image download failed for {Path}", uri.AbsolutePath);
             return new ImageDownloadResult(url, false, 0, null, 0, null, ex.Message);
         }
     }
 
-    /// <summary>
-    /// Names the file from the URL path plus a hash of the full URL, so two leases for different
-    /// shot types with the same file name cannot overwrite each other.
-    /// </summary>
-    private static string BuildFileName(Uri uri, string? sampleId, string? contentType)
-    {
-        var name = Path.GetFileNameWithoutExtension(uri.AbsolutePath);
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = "image";
-        }
+    public Task<IReadOnlyList<StoredImageInfo>> ListAsync(CancellationToken ct) => store.ListAsync(ct);
 
-        var extension = Path.GetExtension(uri.AbsolutePath);
-        if (string.IsNullOrWhiteSpace(extension))
-        {
-            extension = contentType switch
-            {
-                "image/png" => ".png",
-                "image/tiff" => ".tif",
-                "image/gif" => ".gif",
-                "image/webp" => ".webp",
-                _ => ".jpg"
-            };
-        }
+    public Task<(Stream Content, string ContentType)?> OpenAsync(string name, CancellationToken ct) =>
+        store.OpenAsync(name, ct);
 
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(uri.ToString())))[..8];
-        var prefix = string.IsNullOrWhiteSpace(sampleId) ? string.Empty : $"{Sanitize(sampleId)}_";
-
-        return $"{prefix}{Sanitize(name)}_{hash}{extension}";
-    }
-
-    private static string Sanitize(string value) =>
-        string.Concat(value.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-
-    public IReadOnlyList<StoredImageInfo> List()
-    {
-        if (!Directory.Exists(Root))
-        {
-            return [];
-        }
-
-        return Directory.EnumerateFiles(Root)
-            .Select(f => new FileInfo(f))
-            .OrderByDescending(f => f.CreationTimeUtc)
-            .Select(f => new StoredImageInfo(f.Name, f.Length, f.CreationTimeUtc))
-            .ToList();
-    }
-
-    /// <summary>Resolves a stored image for preview, refusing anything that escapes the image folder.</summary>
-    public string? ResolvePath(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName) || fileName.Contains("..") || Path.IsPathRooted(fileName))
-        {
-            return null;
-        }
-
-        var full = Path.GetFullPath(Path.Combine(Root, Path.GetFileName(fileName)));
-        return full.StartsWith(Path.GetFullPath(Root), StringComparison.Ordinal) && File.Exists(full) ? full : null;
-    }
+    private static string? Text(JsonNode? node, string property) =>
+        node?[property] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }
